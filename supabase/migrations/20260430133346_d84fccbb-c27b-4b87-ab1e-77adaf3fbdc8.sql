@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.notify_telegram_on_new_booking() FROM PUBLIC, anon, authenticated;

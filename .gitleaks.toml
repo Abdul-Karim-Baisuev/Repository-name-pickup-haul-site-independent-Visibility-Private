@@ -1,0 +1,67 @@
+# Gitleaks configuration for the PICKUP HAUL repository.
+#
+# Extends the upstream default rules and adds project-specific rules to catch
+# Supabase service-role JWTs and Lovable/Telegram tokens that must NEVER land
+# in the repo. Allowlists cover known-safe public values (Supabase anon/
+# publishable keys live in .env by design and are public-by-spec).
+
+[extend]
+useDefault = true
+
+# ---------------------------------------------------------------------------
+# Project-specific rules
+# ---------------------------------------------------------------------------
+
+[[rules]]
+id = "supabase-service-role-jwt"
+description = "Supabase service_role JWT (must never be committed)"
+# JWT header where the payload contains "role":"service_role".
+# Matches the literal base64url-encoded fragment that always appears in
+# service-role tokens regardless of project ref or expiry.
+regex = '''eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]*?(?:cm9sZSI6InNlcnZpY2Vfcm9sZSI|c2VydmljZV9yb2xl)[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+'''
+tags = ["supabase", "jwt", "critical"]
+
+[[rules]]
+id = "supabase-service-role-env"
+description = "SUPABASE_SERVICE_ROLE_KEY assignment"
+regex = '''(?i)(SUPABASE_SERVICE_ROLE_KEY|service_role_jwt|service_role_key)\s*[:=]\s*["']?eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]+'''
+tags = ["supabase", "critical"]
+
+[[rules]]
+id = "telegram-bot-token"
+description = "Telegram bot token"
+regex = '''\b\d{8,11}:[A-Za-z0-9_-]{35,}\b'''
+tags = ["telegram"]
+
+[[rules]]
+id = "lovable-api-key"
+description = "Lovable API key assignment"
+regex = '''(?i)LOVABLE_API_KEY\s*[:=]\s*["']?[A-Za-z0-9_\-]{20,}'''
+tags = ["lovable"]
+
+# ---------------------------------------------------------------------------
+# Allowlist
+# ---------------------------------------------------------------------------
+
+[allowlist]
+description = "Project-wide allowlist for known-safe public values"
+
+paths = [
+  '''(^|/)\.gitleaks\.toml$''',
+  '''(^|/)package-lock\.json$''',
+  '''(^|/)bun\.lockb$''',
+  '''(^|/)yarn\.lock$''',
+  '''(^|/)pnpm-lock\.yaml$''',
+  '''(^|/)dist/''',
+  '''(^|/)build/''',
+  '''(^|/)node_modules/''',
+]
+
+# Supabase anon / publishable keys are designed to be public and ship in the
+# bundled frontend. They contain "role":"anon" — never service_role — so they
+# are safe to commit.
+regexes = [
+  '''eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]*?(?:cm9sZSI6ImFub24i|Imanon)[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+''',
+  '''VITE_SUPABASE_PUBLISHABLE_KEY''',
+  '''VITE_SUPABASE_ANON_KEY''',
+]

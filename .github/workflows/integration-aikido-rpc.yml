@@ -1,0 +1,78 @@
+name: Integration — Aikido RPC access
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Allow only one concurrent run per ref to avoid test users colliding.
+concurrency:
+  group: integration-aikido-rpc-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  aikido-rpc-access:
+    name: Aikido RPC access checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # Required: add these in GitHub → Settings → Secrets and variables → Actions.
+    # SUPABASE_URL, VITE_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify required secrets are present
+        run: |
+          missing=0
+          for v in SUPABASE_URL VITE_SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Missing required secret: $v"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ]
+
+      - name: Install jq
+        run: sudo apt-get update -y && sudo apt-get install -y jq
+
+      - name: Run Aikido RPC integration checks
+        id: aikido
+        run: |
+          set -o pipefail
+          bash scripts/integration/aikido-rpc-access.sh 2>&1 | tee /tmp/aikido-rpc.log
+
+      # Defense in depth: even if the script's own secret-leak guards somehow
+      # missed something, fail the job loudly if known secret-bearing JSON keys
+      # appear anywhere in the captured output.
+      - name: Fail on secret leak in output
+        if: always()
+        run: |
+          if grep -EqiF -e '"client_secret"' \
+                        -e '"aikido_client_secret"' \
+                        -e '"aikido_client_id"' \
+              /tmp/aikido-rpc.log; then
+            echo "::error::Secret-bearing key detected in integration output."
+            exit 1
+          fi
+          # Also fail if the raw masked-preview field is presented unmasked
+          # (i.e. client_id_preview without the • mask AND non-empty).
+          if grep -Eq '"client_id_preview"\s*:\s*"[^•"]+"' /tmp/aikido-rpc.log; then
+            echo "::error::client_id_preview appears unmasked in output."
+            exit 1
+          fi
+
+      - name: Upload log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aikido-rpc-log
+          path: /tmp/aikido-rpc.log
+          retention-days: 7

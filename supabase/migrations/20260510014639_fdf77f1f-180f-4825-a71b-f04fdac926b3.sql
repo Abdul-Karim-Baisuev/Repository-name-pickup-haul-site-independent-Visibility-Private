@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS public._sync_service_role_jwt_vault(text);
